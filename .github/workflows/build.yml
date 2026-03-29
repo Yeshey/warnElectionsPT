@@ -25,11 +25,8 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build APK
-        run: eas build -p android --profile preview --non-interactive --no-wait
-        # --no-wait submits to EAS cloud and exits; remove it if you want the action
-        # to block until the APK is ready and download it as an artifact
+        run: eas build -p android --profile preview --non-interactive
 
-      # Optional: if you remove --no-wait, download and publish to GitHub Releases
       - name: Download built APK
         if: success()
         run: |
