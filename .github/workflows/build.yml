@@ -34,13 +34,13 @@ jobs:
         if: success()
         run: |
           URL=$(eas build:list --platform android --limit 1 --json | jq -r '.[0].artifacts.buildUrl')
-          curl -L "$URL" -o election-checker.apk
+          curl -L "$URL" -o election-checker-pt.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Build ${{ github.run_number }}
-          files: election-checker.apk
+          files: election-checker-pt.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
