@@ -18,6 +18,7 @@
           nodejs_25
           android-tools
           jdk17
+          eas-cli
         ];
 
         shellHook = ''

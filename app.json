@@ -20,10 +20,31 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "554fcbc0-bff5-4fe3-95fd-a90a8993e18a"
+      }
     }
-  }
+  },
+  "android": {
+    "permissions": [
+      "RECEIVE_BOOT_COMPLETED",
+      "WAKE_LOCK"
+    ]
+  },
+  "plugins": [
+    [
+      "expo-notifications",
+      {
+        "icon": "./assets/icon.png",
+        "color": "#ffffff"
+      }
+    ]
+  ]
 }
