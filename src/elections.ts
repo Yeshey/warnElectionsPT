@@ -82,7 +82,16 @@ function fetchWithTimeout(input: RequestInfo, init: RequestInit = {}, timeoutMs 
 }
 
 const PROXIES: Array<(url: string) => Promise<string>> = [
-  // 1. allorigins
+  // 1. Direct fetch — works on native (no CORS enforcement), fastest
+  async (url) => {
+    const r = await fetchWithTimeout(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EleicoesApp/1.0)' },
+    });
+    if (!r.ok) throw new Error(`direct HTTP ${r.status}`);
+    return r.text();
+  },
+
+  // 2. allorigins — fallback proxy
   async (url) => {
     const r = await fetchWithTimeout(
       'https://api.allorigins.win/get?url=' + encodeURIComponent(url),
@@ -94,19 +103,10 @@ const PROXIES: Array<(url: string) => Promise<string>> = [
     return j.contents as string;
   },
 
-  // 2. corsproxy.io
+  // 3. corsproxy.io — last resort
   async (url) => {
     const r = await fetchWithTimeout(`https://corsproxy.io/?${encodeURIComponent(url)}`);
     if (!r.ok) throw new Error(`corsproxy.io HTTP ${r.status}`);
-    return r.text();
-  },
-
-  // 3. Direct fetch — no CORS enforcement in native background tasks
-  async (url) => {
-    const r = await fetchWithTimeout(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EleicoesApp/1.0)' },
-    });
-    if (!r.ok) throw new Error(`direct HTTP ${r.status}`);
     return r.text();
   },
 ];
