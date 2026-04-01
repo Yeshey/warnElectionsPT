@@ -31,7 +31,7 @@ function parseDate(dateStr: string, year: number): { date: Date | null; isApprox
   if (dayMonth) {
     const day = parseInt(dayMonth[1]);
     const monthStr = dayMonth[2];
-    if (!['de','do','da','das','dos'].includes(monthStr)) {
+    if (!['de', 'do', 'da', 'das', 'dos'].includes(monthStr)) {
       for (const [name, num] of Object.entries(MONTHS)) {
         if (name.startsWith(monthStr)) {
           return { date: new Date(year, num - 1, day), isApprox: false };
@@ -44,7 +44,7 @@ function parseDate(dateStr: string, year: number): { date: Date | null; isApprox
   if (s.includes('/')) {
     for (const part of s.split('/')) {
       const p = part.trim();
-      if (['de','do','da','das','dos'].includes(p)) continue;
+      if (['de', 'do', 'da', 'das', 'dos'].includes(p)) continue;
       for (const [name, num] of Object.entries(MONTHS)) {
         if (name.startsWith(p)) {
           return { date: new Date(year, num - 1, 1), isApprox: true };
@@ -68,44 +68,122 @@ function formatDate(date: Date, isApprox: boolean, original: string): string {
   return date.toLocaleDateString('pt-PT');
 }
 
-export async function scrapeElections(): Promise<Election[]> {
-  const url = 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.cne.pt/content/calendario');
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  const json = await res.json();
-  const html: string = json.contents;
+// ---------------------------------------------------------------------------
+// Proxy helpers — tried in order until one works
+// ---------------------------------------------------------------------------
 
-  // Parse table rows with regex
+const CNE_URL = 'https://www.cne.pt/content/calendario';
+
+const PROXIES: Array<(url: string) => Promise<string>> = [
+  // 1. allorigins (original)
+  async (url) => {
+    const r = await fetch(
+      'https://api.allorigins.win/get?url=' + encodeURIComponent(url),
+      { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) },
+    );
+    if (!r.ok) throw new Error(`allorigins HTTP ${r.status}`);
+    const j = await r.json();
+    if (!j.contents) throw new Error('allorigins: empty contents');
+    return j.contents as string;
+  },
+
+  // 2. corsproxy.io
+  async (url) => {
+    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) throw new Error(`corsproxy.io HTTP ${r.status}`);
+    return r.text();
+  },
+
+  // 3. Direct fetch (works in background tasks on native where CORS doesn't apply)
+  async (url) => {
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EleicoesApp/1.0)' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) throw new Error(`direct HTTP ${r.status}`);
+    return r.text();
+  },
+];
+
+/**
+ * Fetch the CNE calendar HTML, trying each proxy in sequence.
+ * Retries the whole proxy list for up to `retryDurationMs` (default 1 hour).
+ */
+async function fetchCalendarHtml(retryDurationMs = 60 * 60 * 1000): Promise<string> {
+  const deadline = Date.now() + retryDurationMs;
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    for (const proxy of PROXIES) {
+      try {
+        const html = await proxy(CNE_URL);
+        // Sanity-check: the CNE page always has a table
+        if (html.includes('<tr') && html.toLowerCase().includes('eleição')) {
+          console.log(`[elections] Fetched via proxy ${PROXIES.indexOf(proxy)} on attempt ${attempt}`);
+          return html;
+        }
+        console.warn(`[elections] Proxy ${PROXIES.indexOf(proxy)} returned unexpected content`);
+      } catch (e) {
+        console.warn(`[elections] Proxy ${PROXIES.indexOf(proxy)} failed:`, e);
+      }
+    }
+
+    attempt++;
+    // Exponential backoff: 15s, 30s, 60s, 120s … capped at 5 min
+    const backoffMs = Math.min(15_000 * Math.pow(2, attempt - 1), 5 * 60 * 1000);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((res) => setTimeout(res, Math.min(backoffMs, remaining)));
+  }
+
+  throw new Error(`Could not fetch CNE calendar after ~${retryDurationMs / 60000} minutes`);
+}
+
+// ---------------------------------------------------------------------------
+
+function parseHtml(html: string): Election[] {
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-  const stripTags = (s: string) => s.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').trim();
+  const stripTags = (s: string) =>
+    s
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&nbsp;/g, ' ')
+      .trim();
 
   const elections: Election[] = [];
   let rowMatch;
   let firstRow = true;
 
   while ((rowMatch = rowRegex.exec(html)) !== null) {
-    if (firstRow) { firstRow = false; continue; } // skip header
+    if (firstRow) {
+      firstRow = false;
+      continue;
+    }
     const cells: string[] = [];
     let cellMatch;
-    const cellRe = new RegExp(cellRegex.source, 'gi');
+    const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     while ((cellMatch = cellRe.exec(rowMatch[1])) !== null) {
       cells.push(stripTags(cellMatch[1]));
     }
     if (cells.length < 3) continue;
 
-    const yearStr = cells[0];
-    const rawDate = cells[1];
-    const etype = cells[2];
-    const year = parseInt(yearStr);
+    const year = parseInt(cells[0]);
     if (isNaN(year)) continue;
 
-    const { date, isApprox } = parseDate(rawDate, year);
+    const { date, isApprox } = parseDate(cells[1], year);
     if (date) {
-      elections.push({ date, isApprox, originalStr: rawDate, etype });
+      elections.push({ date, isApprox, originalStr: cells[1], etype: cells[2] });
     }
   }
 
   return elections;
+}
+
+export async function scrapeElections(): Promise<Election[]> {
+  const html = await fetchCalendarHtml();
+  return parseHtml(html);
 }
 
 export function computeNotifications(elections: Election[]): { title: string; body: string }[] {
@@ -125,18 +203,29 @@ export function computeNotifications(elections: Election[]): { title: string; bo
 
     // "This month" alert for approximate
     if (el.isApprox) {
-      const inMonth = el.date.getFullYear() === today.getFullYear() && el.date.getMonth() === today.getMonth();
-      const inRange = el.originalStr.includes('/') && (() => {
-        for (const [name, num] of Object.entries(MONTHS)) {
-          if (el.originalStr.toLowerCase().includes(name) && num === today.getMonth() + 1 && el.date.getFullYear() === today.getFullYear()) return true;
-        }
-        return false;
-      })();
+      const inMonth =
+        el.date.getFullYear() === today.getFullYear() &&
+        el.date.getMonth() === today.getMonth();
+      const inRange =
+        el.originalStr.includes('/') &&
+        (() => {
+          for (const [name, num] of Object.entries(MONTHS)) {
+            if (
+              el.originalStr.toLowerCase().includes(name) &&
+              num === today.getMonth() + 1 &&
+              el.date.getFullYear() === today.getFullYear()
+            )
+              return true;
+          }
+          return false;
+        })();
 
       if (inMonth || inRange) {
         notes.push({
           title: 'Eleição Este Mês',
-          body: `ATENÇÃO: Eleição este mês (data exata desconhecida):\n${el.originalStr} ${el.date.getFullYear()} - ${el.etype}\nVerifica: https://www.cne.pt/content/calendario`,
+          body:
+            `ATENÇÃO: Eleição este mês (data exata desconhecida):\n${el.originalStr} ${el.date.getFullYear()} - ${el.etype}\n` +
+            `Verifica: ${CNE_URL}`,
         });
       }
     }
@@ -148,10 +237,14 @@ export function computeNotifications(elections: Election[]): { title: string; bo
   }
 
   for (const [, elems] of Object.entries(genericByOffset)) {
-    const lines = elems.map(e => `${formatDate(e.date, e.isApprox, e.originalStr)} ${e.date.getFullYear()} - ${e.etype}`);
+    const lines = elems.map(
+      (e) => `${formatDate(e.date, e.isApprox, e.originalStr)} ${e.date.getFullYear()} - ${e.etype}`,
+    );
     notes.push({
       title: 'Alerta de Eleições',
-      body: `Eleições próximas detectadas:\n${lines.join('\n')}\nVerifica se precisas de votar antecipadamente.\nhttps://www.cne.pt/content/calendario`,
+      body:
+        `Eleições próximas detectadas:\n${lines.join('\n')}\n` +
+        `Verifica se precisas de votar antecipadamente.\n${CNE_URL}`,
     });
   }
 
@@ -170,14 +263,28 @@ export function computeNotifications(elections: Election[]): { title: string; bo
 
     for (const [cat, period] of Object.entries(earlyVoting)) {
       if (diff === period.start + 1) {
-        notes.push({ title: 'Voto Antecipado', body: `Inscreve-te AMANHÃ para voto antecipado se ${cat}:\nEleição ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}` });
+        notes.push({
+          title: 'Voto Antecipado',
+          body: `Inscreve-te AMANHÃ para voto antecipado se ${cat}:\nEleição ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}`,
+        });
       } else if (diff >= period.end && diff <= period.start) {
-        notes.push({ title: 'Voto Antecipado', body: `Inscreve-te HOJE para voto antecipado se ${cat}:\nEleição ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}` });
+        notes.push({
+          title: 'Voto Antecipado',
+          body: `Inscreve-te HOJE para voto antecipado se ${cat}:\nEleição ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}`,
+        });
       }
     }
 
-    if (diff === 0) notes.push({ title: 'Dia de Eleições', body: `É hoje! Eleição: ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}` });
-    if (diff === 1) notes.push({ title: 'Eleição Amanhã', body: `Eleição AMANHÃ: ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}` });
+    if (diff === 0)
+      notes.push({
+        title: 'Dia de Eleições',
+        body: `É hoje! Eleição: ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}`,
+      });
+    if (diff === 1)
+      notes.push({
+        title: 'Eleição Amanhã',
+        body: `Eleição AMANHÃ: ${el.date.toLocaleDateString('pt-PT')} - ${el.etype}`,
+      });
   }
 
   return notes;
