@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
 
+# 1. This cancels any previous runs of this workflow that are still in progress
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -12,6 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # 2. The "Debounce" timer (waits 60 mins before proceeding)
+      # If you push again during these 60 mins, this run is cancelled by the concurrency block above.
+      # This because I only have 30 builds per month on expo.dev/
+      # Note that github actions have a maximum running time of 6h so I can't increase this further
+      - name: Wait for more commits (Debounce)
+        run: sleep 3600 
 
       - uses: actions/setup-node@v4
         with:
@@ -33,7 +45,7 @@ jobs:
       - name: Download built APK
         if: success()
         run: |
-          URL=$(eas build:list --platform android --limit 1 --json | jq -r '.[0].artifacts.buildUrl')
+          URL=$(eas build:list --platform android --status finished --limit 1 --json | jq -r '.[0].artifacts.buildUrl')
           curl -L "$URL" -o election-checker-pt.apk
 
       - name: Create GitHub Release

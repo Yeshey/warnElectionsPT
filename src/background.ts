@@ -7,7 +7,8 @@ export const TASK_NAME = 'election-check';
 
 TaskManager.defineTask(TASK_NAME, async () => {
   try {
-    const elections = await scrapeElections();
+    // 8 rounds ≈ 1 hour (15s + 30s + 60s + ... backoff between rounds)
+    const elections = await scrapeElections(8);
     const notes = computeNotifications(elections);
 
     for (const n of notes) {

@@ -74,12 +74,19 @@ function formatDate(date: Date, isApprox: boolean, original: string): string {
 
 const CNE_URL = 'https://www.cne.pt/content/calendario';
 
+/** AbortSignal.timeout() is not available on Hermes/older RN — use this instead. */
+function fetchWithTimeout(input: RequestInfo, init: RequestInit = {}, timeoutMs = 10_000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 const PROXIES: Array<(url: string) => Promise<string>> = [
-  // 1. allorigins (original)
+  // 1. allorigins
   async (url) => {
-    const r = await fetch(
+    const r = await fetchWithTimeout(
       'https://api.allorigins.win/get?url=' + encodeURIComponent(url),
-      { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000) },
+      { headers: { Accept: 'application/json' } },
     );
     if (!r.ok) throw new Error(`allorigins HTTP ${r.status}`);
     const j = await r.json();
@@ -89,18 +96,15 @@ const PROXIES: Array<(url: string) => Promise<string>> = [
 
   // 2. corsproxy.io
   async (url) => {
-    const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
+    const r = await fetchWithTimeout(`https://corsproxy.io/?${encodeURIComponent(url)}`);
     if (!r.ok) throw new Error(`corsproxy.io HTTP ${r.status}`);
     return r.text();
   },
 
-  // 3. Direct fetch (works in background tasks on native where CORS doesn't apply)
+  // 3. Direct fetch — no CORS enforcement in native background tasks
   async (url) => {
-    const r = await fetch(url, {
+    const r = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EleicoesApp/1.0)' },
-      signal: AbortSignal.timeout(10_000),
     });
     if (!r.ok) throw new Error(`direct HTTP ${r.status}`);
     return r.text();
@@ -108,37 +112,36 @@ const PROXIES: Array<(url: string) => Promise<string>> = [
 ];
 
 /**
- * Fetch the CNE calendar HTML, trying each proxy in sequence.
- * Retries the whole proxy list for up to `retryDurationMs` (default 1 hour).
+ * Try every proxy once per round. Repeat for `maxRounds` rounds total,
+ * with a short pause between rounds.
+ *
+ * - Button press  → maxRounds = 1  (tries all 3 proxies once, then gives up)
+ * - Background    → maxRounds = 8  (retries for ~1 hour with backoff)
  */
-async function fetchCalendarHtml(retryDurationMs = 60 * 60 * 1000): Promise<string> {
-  const deadline = Date.now() + retryDurationMs;
-  let attempt = 0;
-
-  while (Date.now() < deadline) {
-    for (const proxy of PROXIES) {
+async function fetchCalendarHtml(maxRounds = 1): Promise<string> {
+  for (let round = 0; round < maxRounds; round++) {
+    for (let i = 0; i < PROXIES.length; i++) {
       try {
-        const html = await proxy(CNE_URL);
-        // Sanity-check: the CNE page always has a table
+        const html = await PROXIES[i](CNE_URL);
         if (html.includes('<tr') && html.toLowerCase().includes('eleição')) {
-          console.log(`[elections] Fetched via proxy ${PROXIES.indexOf(proxy)} on attempt ${attempt}`);
+          console.log(`[elections] OK — proxy ${i}, round ${round}`);
           return html;
         }
-        console.warn(`[elections] Proxy ${PROXIES.indexOf(proxy)} returned unexpected content`);
+        console.warn(`[elections] Proxy ${i} returned unexpected content`);
       } catch (e) {
-        console.warn(`[elections] Proxy ${PROXIES.indexOf(proxy)} failed:`, e);
+        console.warn(`[elections] Proxy ${i} failed:`, e);
       }
     }
 
-    attempt++;
-    // Exponential backoff: 15s, 30s, 60s, 120s … capped at 5 min
-    const backoffMs = Math.min(15_000 * Math.pow(2, attempt - 1), 5 * 60 * 1000);
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await new Promise((res) => setTimeout(res, Math.min(backoffMs, remaining)));
+    if (round < maxRounds - 1) {
+      // Exponential backoff between rounds: 15s, 30s, 60s … capped at 5 min
+      const backoffMs = Math.min(15_000 * Math.pow(2, round), 5 * 60 * 1000);
+      console.log(`[elections] All proxies failed, waiting ${backoffMs / 1000}s before round ${round + 1}`);
+      await new Promise((res) => setTimeout(res, backoffMs));
+    }
   }
 
-  throw new Error(`Could not fetch CNE calendar after ~${retryDurationMs / 60000} minutes`);
+  throw new Error('Could not fetch CNE calendar — all proxies exhausted');
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +184,12 @@ function parseHtml(html: string): Election[] {
   return elections;
 }
 
-export async function scrapeElections(): Promise<Election[]> {
-  const html = await fetchCalendarHtml();
+/**
+ * @param maxRounds - how many full proxy-list attempts to make before giving up.
+ *   Pass 1 for a quick "try once" (button press), 8+ for background long-retry.
+ */
+export async function scrapeElections(maxRounds = 1): Promise<Election[]> {
+  const html = await fetchCalendarHtml(maxRounds);
   return parseHtml(html);
 }
 
