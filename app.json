@@ -36,7 +36,9 @@
   "android": {
     "permissions": [
       "RECEIVE_BOOT_COMPLETED",
-      "WAKE_LOCK"
+      "WAKE_LOCK",
+      "android.permission.SCHEDULE_EXACT_ALARM",
+      "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
     ]
   },
   "plugins": [
