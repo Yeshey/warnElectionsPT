@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert, Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import { requestPermissions, sendNotification, scheduleDailyCheck } from './src/notifications';
+import { requestPermissions, sendNotification } from './src/notifications';
+import { registerBackgroundTask } from './src/background';
 import { scrapeElections, computeNotifications } from './src/elections';
 
 const CNE_URL = 'https://www.cne.pt/content/calendario';
@@ -9,35 +9,22 @@ const CNE_URL = 'https://www.cne.pt/content/calendario';
 export default function App() {
   const [loading, setLoading] = useState(false);
   const [lastCheck, setLastCheck] = useState<string | null>(null);
-  const listenerRef = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
     (async () => {
       const granted = await requestPermissions();
       if (granted) {
-        await scheduleDailyCheck(14, 0); // every day at 14:00
+        await registerBackgroundTask();
       }
     })();
-
-    // This listener fires when a scheduled notification is received while the
-    // app is in the foreground OR background (on Android, the OS can wake the
-    // app briefly). We use it to trigger the actual election scrape.
-    listenerRef.current = Notifications.addNotificationReceivedListener(async (notification) => {
-      if (notification.request.content.data?.type === 'daily-check') {
-        await runCheck(/* silent = */ false);
-      }
-    });
-
-    return () => {
-      listenerRef.current?.remove();
-    };
   }, []);
 
-  async function runCheck(triggeredByButton = true) {
+  async function runCheck() {
     if (loading) return;
     setLoading(true);
     try {
-      const elections = await scrapeElections(triggeredByButton ? 1 : 8);
+      // maxRounds=1: try each proxy once, fail fast — this is a manual button press
+      const elections = await scrapeElections(1);
       const notes = computeNotifications(elections);
 
       if (notes.length === 0) {
@@ -51,16 +38,9 @@ export default function App() {
         }
       }
 
-      const now = new Date().toLocaleString('pt-PT');
-      setLastCheck(now);
-    } catch (e) {
-      await sendNotification(
-        'Verificação Falhou',
-        'Não foi possível obter o calendário eleitoral. Verifica a tua ligação.',
-      );
-      if (triggeredByButton) {
-        Alert.alert('Erro', 'Não foi possível verificar as eleições. Tenta novamente.');
-      }
+      setLastCheck(new Date().toLocaleString('pt-PT'));
+    } catch {
+      Alert.alert('Erro', 'Não foi possível verificar as eleições. Tenta novamente.');
     } finally {
       setLoading(false);
     }
@@ -70,10 +50,10 @@ export default function App() {
     <View style={styles.container}>
       <Text style={styles.title}>🗳️ Eleições PT</Text>
       <Text style={styles.subtitle}>
-        Verifica o calendário eleitoral diariamente às 14h e notifica-te sobre eleições próximas.
+        Verifica o calendário eleitoral automaticamente e notifica-te sobre eleições próximas.
       </Text>
 
-      <TouchableOpacity style={styles.button} onPress={() => runCheck(true)} disabled={loading}>
+      <TouchableOpacity style={styles.button} onPress={runCheck} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? 'A verificar…' : 'Verificar Agora'}</Text>
       </TouchableOpacity>
 
@@ -86,7 +66,7 @@ export default function App() {
       </TouchableOpacity>
 
       <Text style={styles.footer}>
-        Notificação diária agendada para as 14:00.{'\n'}
+        Verificação automática em segundo plano a cada 8 horas.{'\n'}
         {Platform.OS === 'android'
           ? 'Certifica-te de que a optimização de bateria está desativada.'
           : ''}
