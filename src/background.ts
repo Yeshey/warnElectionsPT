@@ -20,8 +20,8 @@ TaskManager.defineTask(TASK_NAME, async () => {
     const DEBUG = true;
     if (DEBUG && notes.length === 0) {
       await sendNotification(
-        '✅ Verificação Diária',
-        'Nenhuma eleição próxima encontrada.',
+        '✅ Daily Background Check',
+        'No upcoming elections found.',
       );
     }
 
