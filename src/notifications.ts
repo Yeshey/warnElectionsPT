@@ -1,17 +1,54 @@
 import * as Notifications from 'expo-notifications';
+import * as IntentLauncher from 'expo-intent-launcher';
+import { Platform, Alert } from 'react-native';
+import Constants from 'expo-constants';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
-    shouldPlaySound: false,
+    shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
 
-export async function requestPermissions() {
+export async function requestPermissions(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();
-  return status === 'granted';
+  if (status !== 'granted') return false;
+
+  if (Platform.OS === 'android') {
+    await promptDisableBatteryOptimization();
+  }
+
+  return true;
+}
+
+async function promptDisableBatteryOptimization() {
+  Alert.alert(
+    'Optimização de Bateria',
+    'Para garantir notificações diárias fiáveis, por favor desativa a optimização de bateria para esta aplicação.',
+    [
+      { text: 'Agora Não', style: 'cancel' },
+      {
+        text: 'Abrir Definições',
+        onPress: () => {
+          const pkg =
+            Constants.expoConfig?.android?.package ??
+            (Constants.manifest as any)?.android?.package;
+          if (pkg) {
+            IntentLauncher.startActivityAsync(
+              IntentLauncher.ActivityAction.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+              { data: `package:${pkg}` },
+            ).catch(() => {
+              IntentLauncher.startActivityAsync(
+                IntentLauncher.ActivityAction.IGNORE_BATTERY_OPTIMIZATION_SETTINGS,
+              );
+            });
+          }
+        },
+      },
+    ],
+  );
 }
 
 export async function sendNotification(title: string, body: string) {
@@ -19,37 +56,4 @@ export async function sendNotification(title: string, body: string) {
     content: { title, body },
     trigger: null, // immediate
   });
-}
-
-const DAILY_CHECK_ID = 'daily-election-check-heartbeat';
-
-/**
- * Schedule a silent daily notification at 09:00 that acts as proof-of-life.
- * The background task does the real work; this ensures something fires daily
- * even if the OS never wakes the background task.
- *
- * On Android, DAILY triggers use AlarmManager and survive app termination.
- */
-export async function scheduleDailyHeartbeat() {
-  // Cancel existing so we don't double-schedule
-  await Notifications.cancelScheduledNotificationAsync(DAILY_CHECK_ID).catch(() => {});
-
-  await Notifications.scheduleNotificationAsync({
-    identifier: DAILY_CHECK_ID,
-    content: {
-      title: '🗳️ Warn Elections',
-      body: 'A verificar calendário eleitoral…',
-      // Make it low-priority so it's not intrusive
-      priority: Notifications.AndroidNotificationPriority.LOW,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: 9,
-      minute: 0,
-    },
-  });
-}
-
-export async function cancelDailyHeartbeat() {
-  await Notifications.cancelScheduledNotificationAsync(DAILY_CHECK_ID).catch(() => {});
 }

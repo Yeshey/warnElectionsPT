@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert, Platform } from 'react-native';
-import { requestPermissions, sendNotification, scheduleDailyHeartbeat } from './src/notifications';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  Linking, Alert, Platform,
+} from 'react-native';
+import { requestPermissions, sendNotification } from './src/notifications';
+// This import also executes TaskManager.defineTask() at module load time,
+// which is required for the background task to work when the app is woken headlessly.
 import { registerBackgroundTask } from './src/background';
 import { scrapeElections, computeNotifications } from './src/elections';
 
@@ -15,7 +20,6 @@ export default function App() {
       const granted = await requestPermissions();
       if (granted) {
         await registerBackgroundTask();
-        await scheduleDailyHeartbeat();
       }
     })();
   }, []);
@@ -24,7 +28,7 @@ export default function App() {
     if (loading) return;
     setLoading(true);
     try {
-      // maxRounds=1: try each proxy once, fail fast — this is a manual button press
+      // maxRounds=1: try each proxy once, fail fast for a manual press
       const elections = await scrapeElections(1);
       const notes = computeNotifications(elections);
 
@@ -55,7 +59,9 @@ export default function App() {
       </Text>
 
       <TouchableOpacity style={styles.button} onPress={runCheck} disabled={loading}>
-        <Text style={styles.buttonText}>{loading ? 'A verificar…' : 'Verificar Agora'}</Text>
+        <Text style={styles.buttonText}>
+          {loading ? 'A verificar…' : 'Verificar Agora'}
+        </Text>
       </TouchableOpacity>
 
       {lastCheck && (
@@ -67,7 +73,7 @@ export default function App() {
       </TouchableOpacity>
 
       <Text style={styles.footer}>
-        Verificação automática em segundo plano a cada 8 horas.{'\n'}
+        Verificação automática diária em segundo plano.{'\n'}
         {Platform.OS === 'android'
           ? 'Certifica-te de que a optimização de bateria está desativada.'
           : ''}
