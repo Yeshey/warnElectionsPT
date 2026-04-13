@@ -13,8 +13,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.yeshey.warnElectionsPT"
+      "supportsTablet": true
     },
     "android": {
       "package": "com.yeshey.warnElectionsPT",
@@ -23,16 +22,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.WAKE_LOCK",
-        "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.USE_EXACT_ALARM",
-        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
-      ]
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -41,22 +31,25 @@
       "eas": {
         "projectId": "554fcbc0-bff5-4fe3-95fd-a90a8993e18a"
       }
-    },
-    "plugins": [
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.png",
-          "color": "#ffffff",
-          "defaultChannel": "election-alerts"
-        }
-      ],
-      [
-        "./plugins/withBackgroundActions",
-        {
-          "foregroundServiceType": "dataSync"
-        }
-      ]
+    }
+  },
+  "android": {
+    "permissions": [
+      "RECEIVE_BOOT_COMPLETED",
+      "WAKE_LOCK",
+      "android.permission.SCHEDULE_EXACT_ALARM",
+      "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+      "android.permission.FOREGROUND_SERVICE",
+      "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
     ]
-  }
+  },
+  "plugins": [
+    [
+      "expo-notifications",
+      {
+        "icon": "./assets/icon.png",
+        "color": "#ffffff"
+      }
+    ]
+  ]
 }
