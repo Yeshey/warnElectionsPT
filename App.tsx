@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert, Platform } from 'react-native';
-import { requestPermissions, sendNotification } from './src/notifications';
+import { requestPermissions, sendNotification, scheduleDailyHeartbeat } from './src/notifications';
 import { registerBackgroundTask } from './src/background';
 import { scrapeElections, computeNotifications } from './src/elections';
 
@@ -15,6 +15,7 @@ export default function App() {
       const granted = await requestPermissions();
       if (granted) {
         await registerBackgroundTask();
+        await scheduleDailyHeartbeat();
       }
     })();
   }, []);

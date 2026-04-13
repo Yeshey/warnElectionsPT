@@ -4,7 +4,7 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
-    shouldPlaySound: true,
+    shouldPlaySound: false,
     shouldSetBadge: false,
   }),
 });
@@ -21,5 +21,35 @@ export async function sendNotification(title: string, body: string) {
   });
 }
 
-// scheduleDailyCheck and cancelDailyCheck removed —
-// background task (background.ts) handles periodic checks instead.
+const DAILY_CHECK_ID = 'daily-election-check-heartbeat';
+
+/**
+ * Schedule a silent daily notification at 09:00 that acts as proof-of-life.
+ * The background task does the real work; this ensures something fires daily
+ * even if the OS never wakes the background task.
+ *
+ * On Android, DAILY triggers use AlarmManager and survive app termination.
+ */
+export async function scheduleDailyHeartbeat() {
+  // Cancel existing so we don't double-schedule
+  await Notifications.cancelScheduledNotificationAsync(DAILY_CHECK_ID).catch(() => {});
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: DAILY_CHECK_ID,
+    content: {
+      title: '🗳️ Warn Elections',
+      body: 'A verificar calendário eleitoral…',
+      // Make it low-priority so it's not intrusive
+      priority: Notifications.AndroidNotificationPriority.LOW,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: 9,
+      minute: 0,
+    },
+  });
+}
+
+export async function cancelDailyHeartbeat() {
+  await Notifications.cancelScheduledNotificationAsync(DAILY_CHECK_ID).catch(() => {});
+}
