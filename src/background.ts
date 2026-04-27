@@ -1,39 +1,42 @@
-import * as BackgroundTask from 'expo-background-task';
+import * as BackgroundTask from 'expo-background-task'; // <--- BACK TO YOUR CORRECT LIBRARY
 import * as TaskManager from 'expo-task-manager';
 import { scrapeElections, computeNotifications } from './elections';
-import { sendNotification } from './notifications';
+import { sendNotification, clearScheduledNotifications } from './notifications';
 
 export const TASK_NAME = 'election-check';
 
-// Must be called at module load time (top level), not inside a component.
 TaskManager.defineTask(TASK_NAME, async () => {
   try {
-    // 8 rounds ≈ up to ~1 hour of retrying with exponential backoff.
-    // Network is guaranteed available — expo-background-task requires it.
     const elections = await scrapeElections(8);
-    const notes = computeNotifications(elections);
+    
+    // Clear old scheduled notes
+    await clearScheduledNotifications();
 
-    for (const n of notes) {
-      await sendNotification(n.title, n.body);
-    }
+    // Silently pre-schedule for the next 7 days at 10 AM
+    for (let i = 0; i < 7; i++) {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + i);
+      targetDate.setHours(10, 0, 0, 0);
 
-    // DEBUG: remove once you've confirmed background tasks fire correctly
-    const DEBUG = true;
-    if (DEBUG && notes.length === 0) {
-      await sendNotification(
-        '✅ Verificação Diária',
-        `Nenhuma eleição próxima. (${new Date().toLocaleTimeString('pt-PT')})`,
-      );
+      if (targetDate.getTime() < Date.now()) continue;
+
+      const notes = computeNotifications(elections, targetDate);
+
+      if (notes.length === 0) {
+        await sendNotification(
+          'Sem Eleições Próximas',
+          'Verificação diária concluída. Nenhuma eleição próxima.',
+          targetDate
+        );
+      } else {
+        for (const n of notes) {
+          await sendNotification(n.title, n.body, targetDate);
+        }
+      }
     }
 
     return BackgroundTask.BackgroundTaskResult.Success;
   } catch (e) {
-    try {
-      await sendNotification(
-        '❌ Verificação Falhou',
-        'Não foi possível obter o calendário eleitoral após várias tentativas.',
-      );
-    } catch {}
     return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
@@ -41,8 +44,6 @@ TaskManager.defineTask(TASK_NAME, async () => {
 export async function registerBackgroundTask() {
   const status = await BackgroundTask.getStatusAsync();
 
-  // Only Restricted means truly unavailable (parental controls, etc.)
-  // Available is the normal state on both Android and iOS
   if (status === BackgroundTask.BackgroundTaskStatus.Restricted) {
     console.warn('[background] Background tasks restricted by system, cannot register.');
     return;
@@ -54,8 +55,9 @@ export async function registerBackgroundTask() {
     return;
   }
 
+  // expo-background-task API only expects minimumInterval
   await BackgroundTask.registerTaskAsync(TASK_NAME, {
-    minimumInterval: 60 * 60 * 24, // 24 hours — OS decides exact time
+    minimumInterval: 60 * 60 * 12, // 12 hours
   });
 
   console.log('[background] Task registered successfully.');

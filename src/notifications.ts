@@ -26,8 +26,7 @@ export async function requestPermissions(): Promise<boolean> {
 async function promptDisableBatteryOptimization() {
   Alert.alert(
     'Optimização de Bateria',
-    'Para garantir notificações diárias fiáveis, por favor desativa a optimização de bateria para esta aplicação.',
-    [
+    'Para garantir notificações diárias fiáveis, por favor desativa a optimização de bateria para esta aplicação.',[
       { text: 'Agora Não', style: 'cancel' },
       {
         text: 'Abrir Definições',
@@ -51,9 +50,18 @@ async function promptDisableBatteryOptimization() {
   );
 }
 
-export async function sendNotification(title: string, body: string) {
+export async function clearScheduledNotifications() {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
+export async function sendNotification(title: string, body: string, triggerDate?: Date) {
   await Notifications.scheduleNotificationAsync({
     content: { title, body },
-    trigger: null, // immediate
+    trigger: triggerDate
+      ? {
+          type: Notifications.SchedulableTriggerInputTypes.DATE, // <--- FIXED TS ERROR
+          date: triggerDate,
+        }
+      : null, // immediate if no date provided
   });
 }

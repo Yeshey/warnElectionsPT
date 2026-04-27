@@ -68,13 +68,8 @@ function formatDate(date: Date, isApprox: boolean, original: string): string {
   return date.toLocaleDateString('pt-PT');
 }
 
-// ---------------------------------------------------------------------------
-// Proxy helpers — tried in order until one works
-// ---------------------------------------------------------------------------
-
 const CNE_URL = 'https://www.cne.pt/content/calendario';
 
-/** AbortSignal.timeout() is not available on Hermes/older RN — use this instead. */
 function fetchWithTimeout(input: RequestInfo, init: RequestInit = {}, timeoutMs = 10_000): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -82,7 +77,6 @@ function fetchWithTimeout(input: RequestInfo, init: RequestInit = {}, timeoutMs 
 }
 
 const PROXIES: Array<(url: string) => Promise<string>> = [
-  // 1. Direct fetch — works on native (no CORS enforcement), fastest
   async (url) => {
     const r = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EleicoesApp/1.0)' },
@@ -90,8 +84,6 @@ const PROXIES: Array<(url: string) => Promise<string>> = [
     if (!r.ok) throw new Error(`direct HTTP ${r.status}`);
     return r.text();
   },
-
-  // 2. allorigins — fallback proxy
   async (url) => {
     const r = await fetchWithTimeout(
       'https://api.allorigins.win/get?url=' + encodeURIComponent(url),
@@ -102,8 +94,6 @@ const PROXIES: Array<(url: string) => Promise<string>> = [
     if (!j.contents) throw new Error('allorigins: empty contents');
     return j.contents as string;
   },
-
-  // 3. corsproxy.io — last resort
   async (url) => {
     const r = await fetchWithTimeout(`https://corsproxy.io/?${encodeURIComponent(url)}`);
     if (!r.ok) throw new Error(`corsproxy.io HTTP ${r.status}`);
@@ -111,13 +101,6 @@ const PROXIES: Array<(url: string) => Promise<string>> = [
   },
 ];
 
-/**
- * Try every proxy once per round. Repeat for `maxRounds` rounds total,
- * with a short pause between rounds.
- *
- * - Button press  → maxRounds = 1  (tries all 3 proxies once, then gives up)
- * - Background    → maxRounds = 8  (retries for ~1 hour with backoff)
- */
 async function fetchCalendarHtml(maxRounds = 1): Promise<string> {
   for (let round = 0; round < maxRounds; round++) {
     for (let i = 0; i < PROXIES.length; i++) {
@@ -127,33 +110,23 @@ async function fetchCalendarHtml(maxRounds = 1): Promise<string> {
           console.log(`[elections] OK — proxy ${i}, round ${round}`);
           return html;
         }
-        console.warn(`[elections] Proxy ${i} returned unexpected content`);
       } catch (e) {
         console.warn(`[elections] Proxy ${i} failed:`, e);
       }
     }
 
     if (round < maxRounds - 1) {
-      // Exponential backoff between rounds: 15s, 30s, 60s … capped at 5 min
       const backoffMs = Math.min(15_000 * Math.pow(2, round), 5 * 60 * 1000);
-      console.log(`[elections] All proxies failed, waiting ${backoffMs / 1000}s before round ${round + 1}`);
       await new Promise((res) => setTimeout(res, backoffMs));
     }
   }
-
   throw new Error('Could not fetch CNE calendar — all proxies exhausted');
 }
-
-// ---------------------------------------------------------------------------
 
 function parseHtml(html: string): Election[] {
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   const stripTags = (s: string) =>
-    s
-      .replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&nbsp;/g, ' ')
-      .trim();
+    s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();
 
   const elections: Election[] = [];
   let rowMatch;
@@ -180,26 +153,22 @@ function parseHtml(html: string): Election[] {
       elections.push({ date, isApprox, originalStr: cells[1], etype: cells[2] });
     }
   }
-
   return elections;
 }
 
-/**
- * @param maxRounds - how many full proxy-list attempts to make before giving up.
- *   Pass 1 for a quick "try once" (button press), 8+ for background long-retry.
- */
 export async function scrapeElections(maxRounds = 1): Promise<Election[]> {
   const html = await fetchCalendarHtml(maxRounds);
   return parseHtml(html);
 }
 
-export function computeNotifications(elections: Election[]): { title: string; body: string }[] {
-  const today = new Date();
+// Added baseDate parameter so we can predict notifications for future days
+export function computeNotifications(elections: Election[], baseDate: Date = new Date()): { title: string; body: string }[] {
+  const today = new Date(baseDate); 
   today.setHours(0, 0, 0, 0);
   const notes: { title: string; body: string }[] = [];
 
   const standardOffsets = [32, 27, 22];
-  const approxExtraOffsets = [21, 15, 14, 13, 12, 10, 8, 6, 5, 4, 3, 2, 1];
+  const approxExtraOffsets =[21, 15, 14, 13, 12, 10, 8, 6, 5, 4, 3, 2, 1];
 
   const genericByOffset: Record<number, Election[]> = {};
 
@@ -208,7 +177,6 @@ export function computeNotifications(elections: Election[]): { title: string; bo
     elDate.setHours(0, 0, 0, 0);
     const diff = Math.round((elDate.getTime() - today.getTime()) / 86400000);
 
-    // "This month" alert for approximate
     if (el.isApprox) {
       const inMonth =
         el.date.getFullYear() === today.getFullYear() &&
@@ -255,7 +223,6 @@ export function computeNotifications(elections: Election[]): { title: string; bo
     });
   }
 
-  // Early voting + election day (exact only)
   const earlyVoting: Record<string, { start: number; end: number }> = {
     'EM MOBILIDADE': { start: 14, end: 10 },
     'ELEITORES DOENTES INTERNADOS': { start: 20, end: 20 },
