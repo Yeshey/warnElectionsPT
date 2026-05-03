@@ -1,4 +1,4 @@
-import * as BackgroundTask from 'expo-background-task'; // <--- BACK TO YOUR CORRECT LIBRARY
+import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import { scrapeElections, computeNotifications } from './elections';
 import { sendNotification, clearScheduledNotifications } from './notifications';
@@ -22,16 +22,9 @@ TaskManager.defineTask(TASK_NAME, async () => {
 
       const notes = computeNotifications(elections, targetDate);
 
-      if (notes.length === 0) {
-        await sendNotification(
-          'Sem Eleições Próximas',
-          'Verificação diária concluída. Nenhuma eleição próxima.',
-          targetDate
-        );
-      } else {
-        for (const n of notes) {
-          await sendNotification(n.title, n.body, targetDate);
-        }
+      // Só agenda notificações se existirem eleições próximas (ou se for o resumo mensal do dia 1)
+      for (const n of notes) {
+        await sendNotification(n.title, n.body, targetDate);
       }
     }
 

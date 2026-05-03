@@ -158,10 +158,22 @@ function parseHtml(html: string): Election[] {
 
 export async function scrapeElections(maxRounds = 1): Promise<Election[]> {
   const html = await fetchCalendarHtml(maxRounds);
-  return parseHtml(html);
+  const elections = parseHtml(html);
+
+  // === TEST FALSE ELECTIONS ===
+  // Descomenta este bloco para fingir que há uma eleição amanhã ou daqui a 14 dias (Voto em mobilidade)
+  const fakeDate = new Date();
+  fakeDate.setDate(fakeDate.getDate() + 14); // <--- Altera o + 1 para o número de dias desejado
+  elections.push({
+    date: fakeDate,
+    isApprox: false,
+    originalStr: fakeDate.toLocaleDateString('pt-PT'),
+    etype: '[TESTE] Eleição Falsa',
+  });
+
+  return elections;
 }
 
-// Added baseDate parameter so we can predict notifications for future days
 export function computeNotifications(elections: Election[], baseDate: Date = new Date()): { title: string; body: string }[] {
   const today = new Date(baseDate); 
   today.setHours(0, 0, 0, 0);

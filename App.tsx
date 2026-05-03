@@ -3,7 +3,6 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   Linking, Alert, Platform,
 } from 'react-native';
-// ADDED: requestPermissions
 import { requestPermissions, sendNotification, clearScheduledNotifications } from './src/notifications';
 import { registerBackgroundTask } from './src/background';
 import { scrapeElections, computeNotifications } from './src/elections';
@@ -41,24 +40,57 @@ export default function App() {
         // If 10 AM today has already passed, skip scheduling for today
         if (targetDate.getTime() < Date.now()) continue;
 
-        // Compute what the notification should say ON that specific date
         const notes = computeNotifications(elections, targetDate);
 
-        if (notes.length === 0) {
-          await sendNotification(
-            'Sem Eleições Próximas',
-            `Verificação diária concluída. Nenhuma eleição próxima.`,
-            targetDate
-          );
-        } else {
-          for (const n of notes) {
-            await sendNotification(n.title, n.body, targetDate);
-          }
+        // Apenas agenda se houver notas reais a disparar
+        for (const n of notes) {
+          await sendNotification(n.title, n.body, targetDate);
         }
       }
 
       setLastCheck(new Date().toLocaleString('pt-PT'));
-      Alert.alert('Sucesso', 'Calendário atualizado e notificações diárias agendadas para os próximos 7 dias!');
+
+      // === LÓGICA DO ALERTA IMEDIATO NO BOTÃO ===
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // 1. O que nos importa HOJE?
+      const todayNotes = computeNotifications(elections, today);
+
+      // 2. Qual é a próxima eleição no calendário geral?
+      const futureElections = elections
+        .filter(e => {
+          const eDate = new Date(e.date);
+          eDate.setHours(0, 0, 0, 0);
+          return eDate.getTime() >= today.getTime();
+        })
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
+      
+      const nextEl = futureElections[0];
+
+      let alertTitle = '✅ Verificação Concluída';
+      let alertMessage = '';
+
+      // Mostrar os alertas de hoje (se existirem)
+      if (todayNotes.length > 0) {
+        alertTitle = '⚠️ Alertas Ativos Hoje!';
+        alertMessage += todayNotes.map(n => `• ${n.title}\n  ${n.body}`).join('\n\n') + '\n\n';
+      } else {
+        alertMessage += 'Sem alertas ativos para hoje.\n\n';
+      }
+
+      // Adicionar a indicação da próxima eleição
+      if (nextEl) {
+        const dateStr = nextEl.isApprox 
+          ? nextEl.originalStr.charAt(0).toUpperCase() + nextEl.originalStr.slice(1) 
+          : nextEl.date.toLocaleDateString('pt-PT');
+        alertMessage += `👉 Próxima no calendário da CNE:\n📅 ${dateStr}\n🗳️ ${nextEl.etype}`;
+      } else {
+        alertMessage += '👉 Não há eleições futuras no calendário da CNE.';
+      }
+
+      Alert.alert(alertTitle, alertMessage);
+
     } catch {
       Alert.alert('Erro', 'Não foi possível verificar as eleições. Tenta novamente.');
     } finally {
