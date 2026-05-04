@@ -162,14 +162,14 @@ export async function scrapeElections(maxRounds = 1): Promise<Election[]> {
 
   // === TEST FALSE ELECTIONS ===
   // Descomenta este bloco para fingir que há uma eleição amanhã ou daqui a 14 dias (Voto em mobilidade)
-  const fakeDate = new Date();
-  fakeDate.setDate(fakeDate.getDate() + 14); // <--- Altera o + 1 para o número de dias desejado
-  elections.push({
-    date: fakeDate,
-    isApprox: false,
-    originalStr: fakeDate.toLocaleDateString('pt-PT'),
-    etype: '[TESTE] Eleição Falsa',
-  });
+  // const fakeDate = new Date();
+  // fakeDate.setDate(fakeDate.getDate() + 14); // <--- Altera o + 1 para o número de dias desejado
+  // elections.push({
+  //   date: fakeDate,
+  //   isApprox: false,
+  //   originalStr: fakeDate.toLocaleDateString('pt-PT'),
+  //   etype: '[TESTE] Eleição Falsa',
+  // });
 
   return elections;
 }
