@@ -6,6 +6,8 @@ App to warn with notifications about upcoming elections for Portuguese citizens
 
 To run your project, navigate to the directory and run one of the following npm commands.
 
+- `direnv allow` or `nix develop`
+- npm install
 - npm run android
 - npm run ios # you need to use macOS to build the iOS project - use the Expo app if you need to do iOS development without a Mac
 - npm run web
