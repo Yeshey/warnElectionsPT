@@ -273,5 +273,16 @@ export function computeNotifications(elections: Election[], baseDate: Date = new
       });
   }
 
+  // === MONTHLY HEARTBEAT ===
+  // On the 1st of each month, always emit a "still alive" note so we can
+  // confirm the background task is firing even when no elections are due.
+  // (NOTE: does NOT guarantee delivery — see Android Doze/autostart notes.)
+  if (today.getDate() === 1) {
+    notes.push({
+      title: 'App a funcionar ✅',
+      body: 'Verificação mensal automática. Sem eleições próximas.',
+    });
+  }
+
   return notes;
 }
