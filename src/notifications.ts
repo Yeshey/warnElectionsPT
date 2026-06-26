@@ -25,15 +25,20 @@ export async function requestPermissions(): Promise<boolean> {
 
 async function promptDisableBatteryOptimization() {
   Alert.alert(
-    'Optimização de Bateria',
-    'Para garantir notificações diárias fiáveis, por favor desativa a optimização de bateria para esta aplicação.',[
-      { text: 'Agora Não', style: 'cancel' },
+    'Reliable Notifications',
+    'To make sure you receive election alerts (and the monthly verification), disable these 2 Android settings:\n\n' +
+      '1) Battery → Set this app to "Unrestricted"\n' +
+      '2) App info → Turn off "Pause app activity if unused"\n\n' +
+      'On Xiaomi/Huawei/Oppo devices, also enable auto-start in the security settings.',
+    [
+      { text: 'Not Now', style: 'cancel' },
       {
-        text: 'Abrir Definições',
+        text: 'Open Settings',
         onPress: () => {
           const pkg =
             Constants.expoConfig?.android?.package ??
             (Constants.manifest as any)?.android?.package;
+
           if (pkg) {
             IntentLauncher.startActivityAsync(
               IntentLauncher.ActivityAction.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
